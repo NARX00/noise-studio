@@ -1,0 +1,45 @@
+name: Site integrity check
+
+# Runs a lightweight check that the live site is up AND is serving the exact
+# file published in this repo (SHA-256 match). Free on GitHub Actions.
+#
+# SETUP (one time):
+#   1. Commit this file to .github/workflows/site-check.yml
+#   2. Repo Settings → Secrets and variables → Actions → Variables → New variable
+#      Name: SITE_URL     Value: https://your-project.pages.dev
+#      (A "variable", not a "secret" — the URL is public anyway.)
+#
+# If the check fails, GitHub emails you and the run shows a red X.
+
+on:
+  schedule:
+    - cron: '0 7 * * *'      # daily at 07:00 UTC
+  workflow_dispatch:          # lets you run it manually from the Actions tab
+  push:
+    branches: [ main ]        # also verify right after each deploy
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Wait for deploy to propagate
+        if: github.event_name == 'push'
+        run: sleep 60
+
+      - name: Verify site is up and unmodified
+        env:
+          SITE_URL: ${{ vars.SITE_URL }}
+        run: |
+          if [ -z "$SITE_URL" ]; then
+            echo "::error::SITE_URL repository variable is not set."
+            echo "Set it under Settings → Secrets and variables → Actions → Variables."
+            exit 1
+          fi
+          chmod +x check-site.sh
+          ./check-site.sh "$SITE_URL"

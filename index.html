@@ -1,0 +1,1260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!--
+  Security posture: this is a fully self-contained, offline, static app.
+  The Content-Security-Policy below is intentionally strict:
+   - default-src 'none'      : deny everything unless explicitly allowed
+   - script-src 'self' 'unsafe-inline' : only the inline script in THIS file runs;
+                               no external or injected <script src> can load
+   - style-src  'self' 'unsafe-inline' : only the inline styles in THIS file
+   - img-src / media-src 'self' data: blob: : canvas + generated-audio blobs
+   - connect-src 'none'      : the app makes NO network requests, ever.
+                               Any injected fetch()/XHR/WebSocket is blocked.
+   - object-src / frame-src / base-uri / form-action 'none' : no plugins,
+                               no iframes, no <base> hijack, no form posting.
+  If you ever add an external resource, you must widen this policy AND pin it
+  with Subresource Integrity — see the accompanying SECURITY / verification notes.
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'none'; font-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'; manifest-src 'self'">
+<meta http-equiv="X-Content-Type-Options" content="nosniff">
+<meta name="referrer" content="no-referrer">
+<title>Noise Studio — calming sound & sound science</title>
+<style>
+  :root{
+    --bg:#faf9f5;--surface:#fff;--surface-alt:#f3f1ea;--page:#f5f3ee;--ink:#14130f;
+    --sec:#54524b;--muted:#8a877d;--border:rgba(20,19,15,.1);--border-strong:rgba(20,19,15,.16);
+    --accent:#2f6fd0;--accent-bg:#e7f0fb;--accent-ink:#1e5ab0;--line:#5646b8;--red:#d6472f;
+    --amber:#cf8a2a;--green:#2e9e6b;--radius:10px;--radius-lg:16px;--focus-w:3px;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,Menlo,Consolas,monospace;
+    --shadow:0 1px 3px rgba(20,19,15,.06),0 4px 16px rgba(20,19,15,.05);
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --bg:#1b1b19;--surface:#26261f;--surface-alt:#2d2d29;--page:#141312;--ink:#f4f2ea;
+    --sec:#c4c2b6;--muted:#8a877d;--border:rgba(255,255,255,.1);--border-strong:rgba(255,255,255,.17);
+    --accent:#4a90e8;--accent-bg:#123152;--accent-ink:#9ec5f5;--line:#9587ea;--red:#e5604a;
+    --amber:#e0a343;--green:#4cbd88;--shadow:0 1px 3px rgba(0,0,0,.3),0 4px 16px rgba(0,0,0,.25);
+  }}
+  *{box-sizing:border-box;}
+  html{-webkit-text-size-adjust:100%;}
+  body{margin:0;background:var(--page);color:var(--ink);font-family:var(--font);line-height:1.55;}
+  .app{max-width:900px;margin:0 auto;padding:0 1rem 5rem;}
+
+  /* top bar */
+  header{position:sticky;top:0;z-index:20;background:var(--page);
+    border-bottom:.5px solid var(--border);padding:.7rem 0;margin-bottom:1.25rem;}
+  .bar{max-width:900px;margin:0 auto;padding:0 1rem;display:flex;align-items:center;gap:12px;}
+  .brand{font-weight:600;font-size:17px;display:flex;align-items:center;gap:8px;}
+  .brand .dot{width:12px;height:12px;border-radius:50%;
+    background:conic-gradient(from 0deg,var(--accent),var(--line),var(--red),var(--amber),var(--accent));}
+  .spacer{flex:1;}
+  .seg{display:inline-flex;background:var(--surface-alt);border-radius:999px;padding:3px;gap:2px;}
+  .seg button{border:0;background:transparent;color:var(--sec);font-size:13px;font-weight:500;
+    padding:6px 14px;border-radius:999px;cursor:pointer;font-family:inherit;}
+  .seg button.on{background:var(--surface);color:var(--ink);box-shadow:var(--shadow);}
+  .icon-btn{border:.5px solid var(--border-strong);background:var(--surface);color:var(--ink);
+    width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:16px;display:grid;place-items:center;}
+  .icon-btn:hover{background:var(--surface-alt);}
+
+  h1{font-size:22px;font-weight:600;margin:.2rem 0;}
+  h2{font-size:16px;font-weight:600;margin:0;}
+  .card{background:var(--surface);border:.5px solid var(--border);border-radius:var(--radius-lg);
+    padding:1.1rem;margin-bottom:1.1rem;box-shadow:var(--shadow);}
+  .muted{color:var(--muted);font-size:13px;}
+  .sec-label{font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;
+    color:var(--muted);margin-bottom:10px;}
+
+  /* preset grid */
+  .presets{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;}
+  .preset{position:relative;border:.5px solid var(--border-strong);border-radius:var(--radius);
+    background:var(--surface);padding:14px;cursor:pointer;text-align:left;transition:.12s;overflow:hidden;}
+  .preset:hover{border-color:var(--accent);transform:translateY(-1px);}
+  .preset.on{border-color:var(--accent);background:var(--accent-bg);}
+  .preset .emoji{font-size:22px;}
+  .preset .pname{font-weight:600;font-size:14px;margin-top:6px;}
+  .preset .pdesc{font-size:12px;color:var(--muted);margin-top:2px;line-height:1.4;}
+
+  /* big play */
+  .player{display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
+  .play-btn{width:64px;height:64px;border-radius:50%;border:0;cursor:pointer;flex-shrink:0;
+    background:var(--accent);color:#fff;font-size:26px;display:grid;place-items:center;
+    box-shadow:0 4px 14px color-mix(in srgb,var(--accent) 40%,transparent);transition:.12s;}
+  .play-btn:hover{transform:scale(1.05);}
+  .play-btn:active{transform:scale(.97);}
+  .now{flex:1;min-width:160px;}
+  .now .t{font-weight:600;font-size:16px;}
+  .now .s{font-size:13px;color:var(--muted);}
+
+  /* controls */
+  .row{display:flex;align-items:center;gap:12px;margin:10px 0;}
+  .row label{font-size:13px;color:var(--sec);min-width:96px;display:flex;align-items:center;gap:5px;}
+  .row .val{font-size:13px;font-weight:600;min-width:52px;text-align:right;font-variant-numeric:tabular-nums;}
+  input[type=range]{flex:1;accent-color:var(--accent);height:5px;}
+  select{font-family:inherit;font-size:13px;padding:8px 11px;border-radius:var(--radius);
+    border:.5px solid var(--border-strong);background:var(--surface);color:var(--ink);cursor:pointer;}
+  .btn{font-family:inherit;font-size:13px;font-weight:500;padding:9px 14px;border-radius:var(--radius);
+    border:.5px solid var(--border-strong);background:var(--surface);color:var(--ink);cursor:pointer;}
+  .btn:hover{background:var(--surface-alt);}
+  .btn.primary{background:var(--accent);color:#fff;border-color:transparent;}
+  .btn.primary:hover{filter:brightness(1.05);}
+  .btn-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;}
+
+  canvas{display:block;width:100%;border-radius:var(--radius);}
+  .stat{font-family:var(--mono);font-size:12px;color:var(--sec);background:var(--surface-alt);
+    border-radius:8px;padding:9px 11px;margin-top:10px;white-space:pre-wrap;line-height:1.5;}
+
+  /* info tip */
+  .tip{position:relative;display:inline-flex;}
+  .tip .q{width:16px;height:16px;border-radius:50%;background:var(--surface-alt);color:var(--muted);
+    font-size:11px;display:grid;place-items:center;cursor:help;border:.5px solid var(--border);}
+  .tip .bubble{position:absolute;bottom:130%;left:50%;transform:translateX(-50%);width:230px;
+    background:var(--ink);color:var(--bg);font-size:12px;line-height:1.5;padding:9px 11px;border-radius:8px;
+    opacity:0;pointer-events:none;transition:.15s;z-index:30;font-weight:400;text-transform:none;letter-spacing:0;}
+  .tip:hover .bubble,.tip .q:focus + .bubble,.tip:focus-within .bubble{opacity:1;pointer-events:auto;}
+
+  .hidden{display:none!important;}
+  .adv-only{}
+
+  /* mixer rows */
+  .mixrow{display:grid;grid-template-columns:24px 110px 1fr 44px;gap:8px;align-items:center;margin:6px 0;}
+
+  /* tabs (analysis) */
+  .tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px;border-bottom:.5px solid var(--border);}
+  .tabs button{border:0;background:transparent;color:var(--sec);font-size:13px;font-weight:500;
+    padding:8px 12px;cursor:pointer;border-bottom:2px solid transparent;font-family:inherit;}
+  .tabs button.on{color:var(--accent);border-bottom-color:var(--accent);}
+  .tabpane{display:none;}
+  .tabpane.on{display:block;}
+
+  /* modal / help / tour */
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;display:none;
+    align-items:center;justify-content:center;padding:1rem;}
+  .overlay.on{display:flex;}
+  .modal{background:var(--surface);border-radius:var(--radius-lg);max-width:560px;width:100%;
+    max-height:85vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.3);}
+  .modal-h{position:sticky;top:0;background:var(--surface);padding:1.1rem 1.3rem;
+    border-bottom:.5px solid var(--border);display:flex;align-items:center;gap:10px;}
+  .modal-b{padding:1.1rem 1.3rem;}
+  .modal-b h3{font-size:14px;margin:1.2rem 0 .3rem;}
+  .modal-b h3:first-child{margin-top:0;}
+  .modal-b p{font-size:14px;color:var(--sec);margin:.3rem 0;}
+  .modal-b .k{font-weight:600;color:var(--ink);}
+
+  /* tour */
+  .tourbox{position:fixed;z-index:60;background:var(--surface);border-radius:var(--radius);
+    box-shadow:0 12px 40px rgba(0,0,0,.35);padding:1rem 1.1rem;max-width:300px;border:.5px solid var(--border);}
+  .tourbox h4{margin:0 0 .3rem;font-size:14px;}
+  .tourbox p{margin:0 0 .7rem;font-size:13px;color:var(--sec);}
+  .tourbox .tnav{display:flex;justify-content:space-between;align-items:center;}
+  .tourbox .tdot{font-size:12px;color:var(--muted);}
+  .highlight{position:relative;z-index:55;box-shadow:0 0 0 3px var(--accent),0 0 0 9999px rgba(0,0,0,.45);
+    border-radius:var(--radius);transition:.2s;}
+
+  footer{text-align:center;color:var(--muted);font-size:12px;margin-top:1.5rem;line-height:1.6;}
+  a{color:var(--accent);}
+
+  /* ---------- accessibility ---------- */
+  .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+    clip:rect(0,0,0,0);white-space:nowrap;border:0;}
+  /* visible keyboard focus everywhere */
+  a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,
+  [tabindex]:focus-visible{outline:var(--focus-w) solid var(--accent);outline-offset:2px;border-radius:6px;}
+  /* skip link */
+  .skip{position:absolute;left:-999px;top:8px;background:var(--accent);color:#fff;
+    padding:8px 14px;border-radius:8px;z-index:100;font-size:14px;}
+  .skip:focus{left:8px;}
+
+  /* Larger-text mode (toggled by adding .a11y-large to <html>) */
+  html.a11y-large{font-size:19px;}
+  html.a11y-large .muted,html.a11y-large .pdesc,html.a11y-large .s{font-size:15px;}
+  html.a11y-large .stat{font-size:14px;}
+  html.a11y-large .sec-label{font-size:14px;}
+  html.a11y-large .row label{font-size:15px;}
+  html.a11y-large .seg button{font-size:15px;}
+
+  /* High-contrast focus / underline links in large mode for clarity */
+  html.a11y-large a{text-decoration:underline;}
+
+  /* Reduced motion: honor OS setting AND an explicit toggle (.a11y-still) */
+  @media (prefers-reduced-motion:reduce){
+    *{animation-duration:.001ms!important;animation-iteration-count:1!important;
+      transition-duration:.001ms!important;scroll-behavior:auto!important;}
+  }
+  html.a11y-still *{animation:none!important;transition:none!important;}
+  html.a11y-still .play-btn:hover{transform:none;}
+  html.a11y-still .preset:hover{transform:none;}
+
+  /* a11y settings row in help */
+  .a11y-opt{display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding:10px 0;border-bottom:.5px solid var(--border);}
+  .a11y-opt:last-child{border-bottom:0;}
+  .a11y-opt .lbl{font-size:14px;}
+  .a11y-opt .lbl small{display:block;color:var(--muted);font-size:12px;}
+  .switch{position:relative;width:46px;height:26px;flex-shrink:0;}
+  .switch input{opacity:0;width:0;height:0;}
+  .switch .track{position:absolute;inset:0;background:var(--surface-alt);border:.5px solid var(--border-strong);
+    border-radius:999px;cursor:pointer;transition:.15s;}
+  .switch .track::before{content:"";position:absolute;width:20px;height:20px;left:2px;top:2px;
+    background:var(--muted);border-radius:50%;transition:.15s;}
+  .switch input:checked+.track{background:var(--accent-bg);border-color:var(--accent);}
+  .switch input:checked+.track::before{transform:translateX(20px);background:var(--accent);}
+  .switch input:focus-visible+.track{outline:3px solid var(--accent);outline-offset:2px;}
+</style>
+</head>
+<body>
+<a href="#main" class="skip">Skip to main content</a>
+<header>
+  <div class="bar">
+    <div class="brand"><span class="dot" aria-hidden="true"></span>Noise Studio</div>
+    <div class="spacer"></div>
+    <div class="seg" id="mode-seg" role="tablist" aria-label="Choose interface mode">
+      <button class="on" data-mode="simple" role="tab" aria-selected="true" id="tab-simple">Simple</button>
+      <button data-mode="advanced" role="tab" aria-selected="false" id="tab-advanced">Advanced</button>
+    </div>
+    <button class="icon-btn" id="a11y-btn" title="Accessibility options" aria-label="Accessibility options">&#9788;</button>
+    <button class="icon-btn" id="help-btn" title="Help and guide" aria-label="Help and guide">?</button>
+  </div>
+</header>
+
+<div class="app" id="main">
+  <p class="sr-only" aria-live="polite" id="live-region"></p>
+
+  <!-- ============ SIMPLE MODE ============ -->
+  <div id="simple-view" role="tabpanel" aria-labelledby="tab-simple">
+    <div class="card" id="tour-presets">
+      <div class="sec-label" id="presets-label">Choose a sound</div>
+      <div class="presets" id="preset-grid" role="radiogroup" aria-labelledby="presets-label"></div>
+    </div>
+
+    <div class="card" id="tour-player">
+      <div class="player">
+        <button class="play-btn" id="big-play" aria-label="Play" aria-pressed="false">▶</button>
+        <div class="now">
+          <div class="t" id="now-title">Rain-like pink noise</div>
+          <div class="s" id="now-sub">Balanced, natural — good for focus and calm</div>
+        </div>
+      </div>
+      <div class="row" style="margin-top:16px;">
+        <label for="s-vol">Volume</label>
+        <input type="range" id="s-vol" min="0" max="100" value="35" aria-describedby="vol-hint">
+        <span class="val" id="s-vol-val">35%</span>
+      </div>
+      <p class="muted" id="vol-hint" style="margin:-4px 0 8px 108px;font-size:12px;">A soft, comfortable level is gentlest on your hearing and works just as well.</p>
+      <div class="row">
+        <label for="s-timer">Sleep timer</label>
+        <select id="s-timer">
+          <option value="0">Off</option>
+          <option value="15">15 minutes</option>
+          <option value="30">30 minutes</option>
+          <option value="45">45 minutes</option>
+          <option value="60">60 minutes</option>
+        </select>
+        <button class="btn" id="s-timer-btn" style="padding:7px 12px;">Start</button>
+        <span class="val" id="s-timer-val" aria-live="polite" style="min-width:64px;font-variant-numeric:tabular-nums;"></span>
+      </div>
+      <div class="row">
+        <label for="s-mod">Gentle waves
+          <span class="tip"><span class="q" tabindex="0" role="button" aria-label="About gentle waves">?</span><span class="bubble" role="tooltip">Slowly rises and falls in volume, like ocean waves — less monotonous over long listening.</span></span>
+        </label>
+        <input type="range" id="s-mod" min="0" max="100" value="0">
+        <span class="val" id="s-mod-val">Off</span>
+      </div>
+      <div class="row">
+        <label for="s-width">Spaciousness
+          <span class="tip"><span class="q" tabindex="0" role="button" aria-label="About spaciousness">?</span><span class="bubble" role="tooltip">Sends slightly different sound to each ear. Low feels centred and close; high feels wide and enveloping, like being surrounded by it. Best with headphones or speakers.</span></span>
+        </label>
+        <input type="range" id="s-width" min="0" max="100" value="60">
+        <span class="val" id="s-width-val">60%</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="sec-label">What am I hearing?</div>
+      <canvas id="s-viz" height="120" role="img" aria-label="Waveform preview of the selected sound"></canvas>
+      <p class="muted" id="s-explain" style="margin:10px 4px 0;"></p>
+    </div>
+  </div>
+
+  <!-- ============ ADVANCED MODE ============ -->
+  <div id="advanced-view" class="hidden" role="tabpanel" aria-labelledby="tab-advanced">
+    <div class="card" id="tour-generator">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+        <h2>Generator</h2>
+        <span class="muted">— build & audition any spectrum</span>
+      </div>
+      <div class="row">
+        <label for="a-type">Noise type
+          <span class="tip"><span class="q" tabindex="0" role="button" aria-label="About noise type">?</span><span class="bubble" role="tooltip">The "color" sets the spectral tilt: how energy is spread across frequency. White = flat, pink = −3 dB/oct, brown = −6, blue/violet rise.</span></span>
+        </label>
+        <select id="a-type">
+          <option value="white">White (0 dB/oct)</option>
+          <option value="pink" selected>Pink (−3)</option>
+          <option value="brown">Brown (−6)</option>
+          <option value="blue">Blue (+3)</option>
+          <option value="violet">Violet (+6)</option>
+          <option value="grey">Grey (perceptual flat)</option>
+        </select>
+      </div>
+      <div class="row">
+        <label for="a-mod">Waves (mod)
+          <span class="tip"><span class="q" tabindex="0" role="button" aria-label="About wave modulation">?</span><span class="bubble" role="tooltip">Amplitude modulation depth — slow swelling of loudness driven by smooth (fBm) noise.</span></span>
+        </label>
+        <input type="range" id="a-mod" min="0" max="100" value="0">
+        <span class="val" id="a-mod-val">Off</span>
+      </div>
+      <div class="row">
+        <label for="a-width">Stereo width
+          <span class="tip"><span class="q" tabindex="0" role="button" aria-label="About stereo width">?</span><span class="bubble" role="tooltip">Inter-channel decorrelation. 0% = identical in both ears (correlation r=1). 100% = independent noise per ear (r=0). Equal-power blend, so loudness stays constant.</span></span>
+        </label>
+        <input type="range" id="a-width" min="0" max="100" value="60">
+        <span class="val" id="a-width-val">60%</span>
+      </div>
+
+      <div id="mixer-block" style="margin-top:10px;">
+        <div class="sec-label" style="display:flex;align-items:center;gap:8px;">
+          <label style="min-width:auto;"><input type="checkbox" id="mix-on"> Mix mode</label>
+          <span class="tip"><span class="q">?</span><span class="bubble">Blend several colors with weights. Each layer is loudness-matched, summed, and re-normalized. Lets you dial a custom tilt.</span></span>
+        </div>
+        <div id="mix-rows"></div>
+      </div>
+
+      <div class="player" style="margin-top:14px;">
+        <button class="play-btn" id="a-play" aria-label="Play" aria-pressed="false">▶</button>
+        <div class="now">
+          <div class="t" id="a-now">Pink noise</div>
+          <div class="s" id="a-slope">slope: — dB/oct</div>
+        </div>
+      </div>
+      <div class="row" style="margin-top:14px;">
+        <label for="a-vol">Volume</label>
+        <input type="range" id="a-vol" min="0" max="100" value="30">
+        <span class="val" id="a-vol-val">30%</span>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn" id="dl-wav">Download WAV</button>
+        <label for="dl-len" class="sr-only">Clip length</label>
+        <select id="dl-len" title="Clip length">
+          <option value="10">10 sec</option>
+          <option value="30" selected>30 sec</option>
+          <option value="60">1 min</option>
+          <option value="300">5 min</option>
+          <option value="600">10 min</option>
+          <option value="1800">30 min</option>
+          <option value="3600">1 hour</option>
+        </select>
+        <span class="muted" id="dl-note" style="align-self:center;font-size:12px;"></span>
+      </div>
+      <p class="muted" style="margin:6px 2px 0;font-size:12px;">Longer clips take a moment to build and produce large files (a 1-hour stereo WAV is roughly 600&nbsp;MB). For repeated listening, a shorter clip set to loop in your player is lighter.</p>
+    </div>
+
+    <div class="card" id="tour-analysis">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <h2>Signal analysis</h2>
+        <span class="muted">— DSP / random-process views</span>
+      </div>
+      <div class="tabs" id="an-tabs" role="tablist" aria-label="Analysis views">
+        <button class="on" data-tab="psd" role="tab" aria-selected="true">PSD</button>
+        <button data-tab="spec" role="tab" aria-selected="false">Spectrogram</button>
+        <button data-tab="acf" role="tab" aria-selected="false">Autocorrelation</button>
+        <button data-tab="hist" role="tab" aria-selected="false">Distribution</button>
+        <button data-tab="sr" role="tab" aria-selected="false">Stochastic resonance</button>
+        <button data-tab="dither" role="tab" aria-selected="false">Dither</button>
+      </div>
+      <div class="tabpane on" data-pane="psd">
+        <canvas id="c-psd" height="200" role="img" aria-label="Power spectral density plot"></canvas>
+        <div class="stat" id="s-psd"></div>
+      </div>
+      <div class="tabpane" data-pane="spec">
+        <canvas id="c-spec" height="220" role="img" aria-label="Live scrolling spectrogram of the playing audio"></canvas>
+        <div class="stat" id="s-spec">Press play to see the live spectrogram. Time flows left to right; vertical axis is frequency (log scale, 20 Hz at the bottom); brightness is energy.</div>
+      </div>
+      <div class="tabpane" data-pane="acf">
+        <canvas id="c-acf" height="200" role="img" aria-label="Autocorrelation plot"></canvas>
+        <div class="stat" id="s-acf"></div>
+      </div>
+      <div class="tabpane" data-pane="hist">
+        <div class="row">
+          <label for="hist-dist">Amplitude</label>
+          <select id="hist-dist">
+            <option value="signal">Current signal (Gaussian)</option>
+            <option value="uniform">Uniform white (flat pdf)</option>
+          </select>
+          <span class="tip"><span class="q" tabindex="0" role="button" aria-label="About amplitude distribution">?</span><span class="bubble" role="tooltip">The spectrum (color) and the amplitude distribution are independent. Gaussian and uniform noise can share a flat spectrum yet have very different histograms — compare their kurtosis.</span></span>
+        </div>
+        <canvas id="c-hist" height="200" role="img" aria-label="Amplitude distribution histogram"></canvas>
+        <div class="stat" id="s-hist"></div>
+      </div>
+      <div class="tabpane" data-pane="sr">
+        <canvas id="c-sr" height="200" role="img" aria-label="Stochastic resonance curve"></canvas>
+        <div class="stat" id="s-sr"></div>
+      </div>
+      <div class="tabpane" data-pane="dither">
+        <div class="row"><label for="q-bits">Bits</label><input type="range" id="q-bits" min="3" max="12" value="6"><span class="val" id="q-bits-val">6</span></div>
+        <canvas id="c-dither" height="200" role="img" aria-label="Quantization error spectrum"></canvas>
+        <div class="stat" id="s-dither"></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <p style="margin:0 0 .5rem;"><strong>Free to use and share.</strong> Runs entirely on your device — no account, no tracking, no cost, works offline.</p>
+    <p style="margin:0 0 .5rem;">This is a comfort and focus tool, not a medical device, and it does not diagnose, treat, or cure any condition. Sound affects everyone differently; there is no single "correct" choice, so go with whatever feels good to you at a soft volume.</p>
+    <p style="margin:0;">If you are struggling with sleep, focus, anxiety, or ringing in your ears (tinnitus), please reach out to a qualified healthcare professional — this tool is not a substitute for care. If you are in distress, contacting local emergency or crisis services is always okay.</p>
+  </footer>
+</div>
+
+<!-- Accessibility modal -->
+<div class="overlay" id="a11y-overlay" role="dialog" aria-modal="true" aria-labelledby="a11y-title">
+  <div class="modal">
+    <div class="modal-h"><h2 id="a11y-title">Accessibility</h2><div class="spacer"></div><button class="icon-btn" id="a11y-close" aria-label="Close accessibility options">✕</button></div>
+    <div class="modal-b">
+      <div class="a11y-opt">
+        <span class="lbl">Larger text<small>Increases text size across the app</small></span>
+        <label class="switch"><input type="checkbox" id="opt-large" aria-label="Larger text"><span class="track"></span></label>
+      </div>
+      <div class="a11y-opt">
+        <span class="lbl">Reduce motion<small>Turns off animations and hover movement</small></span>
+        <label class="switch"><input type="checkbox" id="opt-still" aria-label="Reduce motion"><span class="track"></span></label>
+      </div>
+      <div class="a11y-opt">
+        <span class="lbl">High-contrast focus<small>Stronger outline on the keyboard-focused item</small></span>
+        <label class="switch"><input type="checkbox" id="opt-contrast" aria-label="High contrast focus"><span class="track"></span></label>
+      </div>
+      <div class="a11y-opt">
+        <span class="lbl">Show the welcome tour again<small>Replays the short guided walkthrough</small></span>
+        <button class="btn" id="opt-tour">Start tour</button>
+      </div>
+      <p class="muted" style="margin-top:14px;">These settings are saved on this device and remembered next time. This app also respects your system's dark-mode and reduced-motion preferences automatically.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Help modal -->
+<div class="overlay" id="help-overlay" role="dialog" aria-modal="true" aria-labelledby="help-title">
+  <div class="modal">
+    <div class="modal-h"><h2 id="help-title">Help &amp; guide</h2><div class="spacer"></div><button class="icon-btn" id="help-close" aria-label="Close help">✕</button></div>
+    <div class="modal-b" id="help-body"></div>
+  </div>
+</div>
+
+<!-- Tour -->
+<div class="overlay" id="tour-dim" style="background:transparent;"></div>
+<div class="tourbox hidden" id="tourbox"></div>
+
+<script>
+(function(){
+  "use strict";
+  var css=getComputedStyle(document.documentElement);
+  function CC(n){return css.getPropertyValue(n).trim();}
+  var COL={accent:CC('--accent'),line:CC('--line'),red:CC('--red'),amber:CC('--amber'),
+           green:CC('--green'),muted:CC('--muted'),ink:CC('--ink'),grid:CC('--border'),bg:CC('--surface')};
+
+  // ============================================================
+  // DSP CORE  (verified algorithms)
+  // ============================================================
+  function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+  function gauss(rng){var u=0,v=0;while(u===0)u=rng();while(v===0)v=rng();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+  function fft(re,im,inv){var n=re.length;for(var i=1,j=0;i<n;i++){var bit=n>>1;for(;j&bit;bit>>=1)j^=bit;j^=bit;if(i<j){var t=re[i];re[i]=re[j];re[j]=t;t=im[i];im[i]=im[j];im[j]=t;}}for(var len=2;len<=n;len<<=1){var ang=2*Math.PI/len*(inv?1:-1),wr=Math.cos(ang),wi=Math.sin(ang);for(var i=0;i<n;i+=len){var cwr=1,cwi=0;for(var k=0;k<len/2;k++){var a=i+k,b=i+k+len/2,xr=re[b]*cwr-im[b]*cwi,xi=re[b]*cwi+im[b]*cwr;re[b]=re[a]-xr;im[b]=im[a]-xi;re[a]+=xr;im[a]+=xi;var nc=cwr*wr-cwi*wi;cwi=cwr*wi+cwi*wr;cwr=nc;}}}if(inv){for(var i=0;i<n;i++){re[i]/=n;im[i]/=n;}}}
+  function norm(x){var m=0,i;for(i=0;i<x.length;i++)m+=x[i];m/=x.length;var s=0;for(i=0;i<x.length;i++){x[i]-=m;s+=x[i]*x[i];}s=Math.sqrt(s/x.length)||1;for(i=0;i<x.length;i++)x[i]/=s;return x;}
+
+  var EXP={white:0,pink:-1,brown:-2,blue:1,violet:2};
+  function genColor(type,n,seed){
+    var rng=mulberry32(seed>>>0),i;
+    var w=new Float64Array(n);for(i=0;i<n;i++)w[i]=gauss(rng);
+    if(type==='white')return norm(w);
+    if(type==='grey'){ // approximate perceptual: mild inverse-loudness tilt on pink
+      return greyShape(w,n);
+    }
+    var e=EXP[type];
+    var re=Float64Array.from(w),im=new Float64Array(n);
+    fft(re,im,false);
+    for(var k=0;k<n;k++){var f=(k<=n/2)?k:(n-k);var s=(f===0)?0:Math.pow(f,e/2);re[k]*=s;im[k]*=s;}
+    fft(re,im,true);
+    var o=new Float64Array(n);for(i=0;i<n;i++)o[i]=re[i];
+    return norm(o);
+  }
+  function greyShape(w,n){
+    var re=Float64Array.from(w),im=new Float64Array(n);fft(re,im,false);
+    var sr=44100;
+    for(var k=0;k<n;k++){var f=((k<=n/2)?k:(n-k))*sr/n;if(f<1)f=1;
+      // rough inverse A-weighting so it sounds flatter
+      var ra=(Math.pow(12194,2)*Math.pow(f,4))/((f*f+20.6*20.6)*Math.sqrt((f*f+107.7*107.7)*(f*f+737.9*737.9))*(f*f+12194*12194));
+      var s=(ra>1e-9)?1/ra:0; s=Math.min(s,50);
+      re[k]*=s;im[k]*=s;}
+    fft(re,im,true);var o=new Float64Array(n);for(var i=0;i<n;i++)o[i]=re[i];return norm(o);
+  }
+
+  // fBm control signal (for "waves" amplitude modulation)
+  function fbmControl(n,seed){
+    var rng=mulberry32(seed>>>0),grid=64,grads=new Float64Array(grid);
+    for(var i=0;i<grid;i++)grads[i]=rng()*2-1;
+    function fade(t){return t*t*t*(t*(t*6-15)+10);}
+    function per(x){var xi=Math.floor(x),xf=x-xi,g0=grads[xi%grid],g1=grads[(xi+1)%grid];var a=g0*xf,b=g1*(xf-1);return a+fade(xf)*(b-a);}
+    var out=new Float64Array(n),mx=0;
+    for(var k=0;k<n;k++){var x=k/n*8,t=0,fr=1,amp=1,nm=0;for(var o=0;o<5;o++){t+=per(x*fr)*amp;nm+=amp;fr*=2;amp*=0.5;}out[k]=t/nm;if(Math.abs(out[k])>mx)mx=Math.abs(out[k]);}
+    for(var k=0;k<n;k++)out[k]/=(mx||1);
+    return out;
+  }
+
+  // RMS-matched mix
+  function mixColors(layers,n,seed){
+    var acc=new Float64Array(n),i,j;
+    for(j=0;j<layers.length;j++){
+      var lay=genColor(layers[j].type,n,seed+1009*(j+1));
+      // already unit-RMS from norm(); weight directly
+      var wgt=layers[j].level;
+      for(i=0;i<n;i++)acc[i]+=lay[i]*wgt;
+    }
+    return norm(acc);
+  }
+
+  // Welch PSD
+  function welch(x,sr,nperseg){
+    nperseg=Math.min(nperseg,x.length);var p=1;while(p*2<=nperseg)p*=2;nperseg=p;
+    var step=nperseg>>1,win=new Float64Array(nperseg),U=0,i;
+    for(i=0;i<nperseg;i++){win[i]=0.5-0.5*Math.cos(2*Math.PI*i/(nperseg-1));U+=win[i]*win[i];}
+    var half=nperseg/2,acc=new Float64Array(half+1),count=0,s;
+    for(s=0;s+nperseg<=x.length;s+=step){
+      var re=new Float64Array(nperseg),im=new Float64Array(nperseg),mean=0;
+      for(i=0;i<nperseg;i++)mean+=x[s+i];mean/=nperseg;
+      for(i=0;i<nperseg;i++)re[i]=(x[s+i]-mean)*win[i];
+      fft(re,im,false);
+      for(var k=0;k<=half;k++){var pw=(re[k]*re[k]+im[k]*im[k])/(sr*U);if(k>0&&k<half)pw*=2;acc[k]+=pw;}
+      count++;
+    }
+    if(count===0)count=1;
+    var freqs=new Float64Array(half+1),P=new Float64Array(half+1);
+    for(var k=0;k<=half;k++){freqs[k]=k*sr/nperseg;P[k]=acc[k]/count;}
+    return {freqs:freqs,P:P};
+  }
+  function psdSlope(freqs,P,flo,fhi){var sx=0,sy=0,sxx=0,sxy=0,nn=0;for(var k=0;k<freqs.length;k++){if(freqs[k]>=flo&&freqs[k]<=fhi&&P[k]>0){var lx=Math.log2(freqs[k]),ly=10*Math.log10(P[k]);sx+=lx;sy+=ly;sxx+=lx*lx;sxy+=lx*ly;nn++;}}if(nn<8)return null;return (nn*sxy-sx*sy)/(nn*sxx-sx*sx);}
+
+  function acfFFT(x,maxLag){var n=x.length,nf=1;while(nf<2*n)nf*=2;var re=new Float64Array(nf),im=new Float64Array(nf),mean=0,i;for(i=0;i<n;i++)mean+=x[i];mean/=n;for(i=0;i<n;i++)re[i]=x[i]-mean;fft(re,im,false);for(var k=0;k<nf;k++){re[k]=re[k]*re[k]+im[k]*im[k];im[k]=0;}fft(re,im,true);var r0=re[0]||1,o=new Float64Array(maxLag+1);for(k=0;k<=maxLag;k++)o[k]=re[k]/r0;return o;}
+  function acfDirect(x,maxLag){var n=x.length,mean=0,i;for(i=0;i<n;i++)mean+=x[i];mean/=n;var xc=new Float64Array(n);for(i=0;i<n;i++)xc[i]=x[i]-mean;var den=0;for(i=0;i<n;i++)den+=xc[i]*xc[i];var o=new Float64Array(maxLag+1);for(var k=0;k<=maxLag;k++){var s=0;for(i=0;i<n-k;i++)s+=xc[i]*xc[i+k];o[k]=s/den;}return o;}
+  function moments(x){var n=x.length,mean=0,i;for(i=0;i<n;i++)mean+=x[i];mean/=n;var m2=0,m3=0,m4=0,peak=0,ss=0;for(i=0;i<n;i++){var d=x[i]-mean;m2+=d*d;m3+=d*d*d;m4+=d*d*d*d;var a=Math.abs(x[i]);if(a>peak)peak=a;ss+=x[i]*x[i];}m2/=n;m3/=n;m4/=n;var sd=Math.sqrt(m2),rms=Math.sqrt(ss/n);return {mean:mean,std:sd,skew:m3/Math.pow(sd,3),kurt:m4/(m2*m2)-3,crest:peak/rms,papr:20*Math.log10(peak/rms)};}
+  function histogram(x,bins){var lo=Infinity,hi=-Infinity,i;for(i=0;i<x.length;i++){if(x[i]<lo)lo=x[i];if(x[i]>hi)hi=x[i];}var w=(hi-lo)/bins,c=new Float64Array(bins),ctr=new Float64Array(bins);for(i=0;i<x.length;i++){var b=Math.min(bins-1,Math.floor((x[i]-lo)/w));c[b]++;}for(b=0;b<bins;b++){c[b]/=(x.length*w);ctr[b]=lo+(b+0.5)*w;}return {centers:ctr,pdf:c,lo:lo,hi:hi};}
+  function stochRes(){var sr=8000,dur=1.1,n=Math.floor(sr*dur),fsig=50,thr=1,sa=0.7,rng=mulberry32(7);var nf=1;while(nf*2<=n)nf*=2;var binSig=Math.round(fsig*nf/sr);var amps=[],snr=[];for(var ai=0;ai<50;ai++){var a=0.02+ai*(2.5/49);var re=new Float64Array(nf),im=new Float64Array(nf);for(var i=0;i<nf;i++){var x=sa*Math.sin(2*Math.PI*fsig*i/sr)+a*gauss(rng);re[i]=(x>thr)?1:0;}var mean=0;for(i=0;i<nf;i++)mean+=re[i];mean/=nf;for(i=0;i<nf;i++)re[i]=(re[i]-mean)*(0.5-0.5*Math.cos(2*Math.PI*i/(nf-1)));fft(re,im,false);var pw=new Float64Array(nf/2+1);for(var k=0;k<=nf/2;k++)pw[k]=re[k]*re[k]+im[k]*im[k];var lo=Math.max(1,binSig-2),hi=binSig+3,sp=0;for(k=lo;k<hi;k++)sp+=pw[k];var arr=Array.prototype.slice.call(pw,1).sort(function(p,q){return p-q;});var med=arr[arr.length>>1]*(hi-lo);amps.push(a);snr.push(10*Math.log10(sp/(med+1e-20)+1e-20));}return {amps:amps,snr:snr};}
+  function quantize(x,bits,dither,rng){var q=2/Math.pow(2,bits),o=new Float64Array(x.length),e=new Float64Array(x.length);for(var i=0;i<x.length;i++){var d=0;if(dither==='uniform')d=(rng()-0.5)*q;else if(dither==='tpdf')d=(rng()-rng())*q;var qx=Math.round((x[i]+d)/q)*q;if(qx>1)qx=1;if(qx<-1)qx=-1;o[i]=qx;e[i]=qx-x[i];}return {q:o,err:e};}
+
+  // ============================================================
+  // AUDIO ENGINE
+  // ============================================================
+  var actx=null,masterGain=null,noiseNode=null,modGain=null,lfoTimer=null,playing=false,timerTimeout=null;
+  var analyser=null,specData=null;
+  function ensureCtx(){
+    if(!actx){
+      actx=new (window.AudioContext||window.webkitAudioContext)();
+      masterGain=actx.createGain();
+      analyser=actx.createAnalyser();
+      // 4096-point FFT: 2048 bins, ~10.8 Hz per bin. Needed because the log
+      // frequency axis crowds many display rows into the lowest few bins —
+      // with a smaller FFT the bass end (where brown noise lives) looks blocky.
+      analyser.fftSize=4096;analyser.smoothingTimeConstant=0.6;
+      specData=new Uint8Array(analyser.frequencyBinCount);
+      masterGain.connect(analyser);
+      analyser.connect(actx.destination);
+    }
+  }
+  function makeMono(getType,n,seed){
+    if(state.mixOn && !state.simple)return mixColors(activeLayers(),n,seed);
+    if(PRESET_MIX[getType])return mixColors(PRESET_MIX[getType],n,seed);
+    return genColor(getType,n,seed);
+  }
+  function buildLoopBuffer(getType,seed){
+    ensureCtx();
+    var sr=actx.sampleRate, secs=4, n=1;while(n< sr*secs)n*=2; // pow2 for fft color
+    var width=(state.width==null?60:state.width)/100; // 0 = mono, 1 = fully decorrelated
+    var LEVEL=0.32;
+
+    var buf=actx.createBuffer(2,n,sr),dL=buf.getChannelData(0),dR=buf.getChannelData(1),i;
+
+    if(width<=0.001){
+      var M0=makeMono(getType,n,seed);
+      for(i=0;i<n;i++){var v=Math.max(-1,Math.min(1,M0[i]*LEVEL));dL[i]=v;dR[i]=v;}
+      return buf;
+    }
+
+    // Three independent unit-variance sources: one shared (M) and one per ear.
+    var M=makeMono(getType,n,seed);
+    var A=makeMono(getType,n,seed+7919);
+    var B=makeMono(getType,n,seed+104729);
+
+    // Equal-power blend: each ear = a*shared + b*its-own-independent.
+    // a^2 + b^2 = 1 keeps the per-channel variance at 1 (sources are independent),
+    // so perceived loudness stays constant as width changes.
+    // Inter-channel correlation r = a^2, so width=0 -> r=1 (mono),
+    // width=1 -> r=0 (fully decorrelated).
+    var a=Math.cos(width*Math.PI/2);
+    var b=Math.sin(width*Math.PI/2);
+
+    for(i=0;i<n;i++){
+      var l=a*M[i]+b*A[i];
+      var r=a*M[i]+b*B[i];
+      dL[i]=Math.max(-1,Math.min(1,l*LEVEL));
+      dR[i]=Math.max(-1,Math.min(1,r*LEVEL));
+    }
+    return buf;
+  }
+  function startAudio(getType,modDepth,seed){
+    ensureCtx();
+    if(actx.state==='suspended')actx.resume();
+    stopNodes();
+    var buf=buildLoopBuffer(getType,seed);
+    noiseNode=actx.createBufferSource();noiseNode.buffer=buf;noiseNode.loop=true;
+    modGain=actx.createGain();modGain.gain.value=1;
+    noiseNode.connect(modGain);modGain.connect(masterGain);
+    noiseNode.start();
+    playing=true;
+    if(modDepth>0)startLFO(modDepth,state.period||9);
+  }
+  function startLFO(depth,period){
+    // slow amplitude "waves": update modGain on a timer following a slow sine
+    var t0=actx.currentTime;
+    period=period||9;
+    if(lfoTimer)clearInterval(lfoTimer);
+    lfoTimer=setInterval(function(){
+      if(!modGain)return;
+      var t=actx.currentTime-t0;
+      var m=0.5+0.5*Math.sin(2*Math.PI*t/period);
+      var g=1-(depth/100)*0.8*m;
+      modGain.gain.setTargetAtTime(g,actx.currentTime,0.25);
+    },100);
+  }
+  function stopNodes(){
+    if(noiseNode){try{noiseNode.stop();}catch(e){}try{noiseNode.disconnect();}catch(e){}noiseNode=null;}
+    if(modGain){try{modGain.disconnect();}catch(e){}modGain=null;}
+    if(lfoTimer){clearInterval(lfoTimer);lfoTimer=null;}
+    playing=false;
+  }
+  function setVolume(pct){ensureCtx();masterGain.gain.setTargetAtTime(pct/100,actx.currentTime,0.05);}
+
+  // WAV export
+  function exportWav(mono,sr){
+    var n=mono.length,buf=new ArrayBuffer(44+n*2*2),view=new DataView(buf);
+    function ws(o,s){for(var i=0;i<s.length;i++)view.setUint8(o+i,s.charCodeAt(i));}
+    ws(0,'RIFF');view.setUint32(4,36+n*4,true);ws(8,'WAVE');ws(12,'fmt ');
+    view.setUint32(16,16,true);view.setUint16(20,1,true);view.setUint16(22,2,true);
+    view.setUint32(24,sr,true);view.setUint32(28,sr*4,true);view.setUint16(32,4,true);view.setUint16(34,16,true);
+    ws(36,'data');view.setUint32(40,n*4,true);
+    var off=44;for(var i=0;i<n;i++){var s=Math.max(-1,Math.min(1,mono[i]));var v=s*32767|0;view.setInt16(off,v,true);view.setInt16(off+2,v,true);off+=4;}
+    return new Blob([buf],{type:'audio/wav'});
+  }
+
+  // ============================================================
+  // STATE + PRESETS
+  // ============================================================
+  var PRESETS=[
+    {id:'rain',emoji:'🌧️',name:'Rain',desc:'Balanced pink — focus & calm',type:'pink',mod:20,period:9,width:65,explain:'Pink noise has equal energy in every octave, which our hearing perceives as balanced and natural — much like steady rainfall. A gentle wave keeps it from feeling static.'},
+    {id:'ocean',emoji:'🌊',name:'Ocean',desc:'Slow deep surf swell',type:'brown',mod:70,period:11,width:85,explain:'Deep brown noise with a slow, strong swell — the volume rises and falls over about ten seconds, imitating the long rhythm of ocean waves rolling in and out. Wide and enveloping.'},
+    {id:'waterfall',emoji:'💧',name:'Waterfall',desc:'Steady deep rush',type:'brownmix',mod:6,period:4,width:75,explain:'A continuous, near-steady deep rush — brown noise with a little extra mid-and-high content mixed in for the "spray," and almost no swell. Sounds like standing near a constant waterfall or heavy rain on a roof.'},
+    {id:'fan',emoji:'🌀',name:'Fan / AC',desc:'Steady white',type:'white',mod:0,period:8,width:35,explain:'White noise contains all frequencies at equal power — the familiar even "shhh" of a fan or air conditioner. Kept fairly centred, like a single appliance in the room.'},
+    {id:'breeze',emoji:'🍃',name:'Breeze',desc:'Soft grey, perceptual-flat',type:'grey',mod:35,period:7,width:80,explain:'Grey noise is shaped to sound evenly balanced to human ears, which are more sensitive to mid frequencies. Softer and less hissy than white, with a light breathing swell moving around you.'},
+    {id:'stream',emoji:'🏞️',name:'Stream',desc:'Bright, airy blue',type:'blue',mod:25,period:5,width:70,explain:'Blue noise rises toward high frequencies, giving a light, trickling, airy character like a small stream. Some find it crisp and refreshing.'}
+  ];
+  // preset "types" that are actually small fixed mixes
+  var PRESET_MIX={
+    brownmix:[{type:'brown',level:1.0},{type:'pink',level:0.35},{type:'white',level:0.12}]
+  };
+
+  var state={
+    simple:true, preset:'rain', type:'pink', mod:20, period:9, vol:35, width:60,
+    mixOn:false, seed:12345, analysisData:null, analysisType:'pink'
+  };
+
+  // ============================================================
+  // SIMPLE MODE WIRING
+  // ============================================================
+  var grid=document.getElementById('preset-grid');
+  // Small helper: build an element with a class and text, no innerHTML.
+  function el(tag,cls,text){var e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e;}
+  PRESETS.forEach(function(p){
+    var b=document.createElement('button');b.className='preset'+(p.id===state.preset?' on':'');
+    b.dataset.id=p.id;
+    b.setAttribute('role','radio');
+    b.setAttribute('aria-checked',p.id===state.preset?'true':'false');
+    b.setAttribute('aria-label',p.name+': '+p.desc);
+    var em=el('div','emoji',p.emoji);em.setAttribute('aria-hidden','true');
+    b.appendChild(em);
+    b.appendChild(el('div','pname',p.name));
+    b.appendChild(el('div','pdesc',p.desc));
+    b.onclick=function(){selectPreset(p.id);};
+    grid.appendChild(b);
+  });
+  function selectPreset(id){
+    var p=PRESETS.find(function(x){return x.id===id;});if(!p)return;
+    state.preset=id;state.type=p.type;state.mod=p.mod;state.period=p.period||9;
+    if(p.width!=null){
+      state.width=p.width;
+      document.getElementById('s-width').value=p.width;
+      document.getElementById('s-width-val').textContent=p.width+'%';
+      var aw=document.getElementById('a-width');
+      if(aw){aw.value=p.width;document.getElementById('a-width-val').textContent=p.width+'%';}
+    }
+    Array.from(grid.children).forEach(function(c){var on=c.dataset.id===id;c.classList.toggle('on',on);c.setAttribute('aria-checked',on?'true':'false');});
+    document.getElementById('now-title').textContent=p.name+' — '+labelFor(p.type);
+    document.getElementById('now-sub').textContent=p.desc;
+    document.getElementById('s-explain').textContent=p.explain;
+    document.getElementById('s-mod').value=p.mod;
+    document.getElementById('s-mod-val').textContent=p.mod===0?'Off':p.mod+'%';
+    announce(p.name+' selected. '+p.desc);
+    drawSimpleViz();
+    if(playing){restart();}
+  }
+  function labelFor(t){return {white:'white noise',pink:'pink noise',brown:'brown noise',blue:'blue noise',violet:'violet noise',grey:'grey noise',brownmix:'deep water noise'}[t]||t;}
+
+  function restart(){
+    var type=state.simple?state.type:(document.getElementById('a-type').value);
+    var mod=state.simple?(+document.getElementById('s-mod').value):(+document.getElementById('a-mod').value);
+    startAudio(type,mod,state.seed);
+    setVolume(state.simple?state.vol:(+document.getElementById('a-vol').value));
+  }
+  function togglePlay(){
+    if(playing){stopNodes();setPlayIcons(false);announce('Paused');if(timerInterval)cancelTimer(false);}
+    else{restart();setPlayIcons(true);announce('Playing');}
+    syncSpec();
+  }
+  function setPlayIcons(on){
+    ['big-play','a-play'].forEach(function(id){
+      var el=document.getElementById(id);
+      el.textContent=on?'❚❚':'▶';
+      el.setAttribute('aria-pressed',on?'true':'false');
+      el.setAttribute('aria-label',on?'Pause':'Play');
+    });
+  }
+  var liveRegion=document.getElementById('live-region');
+  function announce(msg){if(liveRegion){liveRegion.textContent='';setTimeout(function(){liveRegion.textContent=msg;},50);}}
+
+  // ---- sleep timer with live countdown ----
+  var timerInterval=null, timerEnd=0;
+  function fmtTime(s){var m=Math.floor(s/60),ss=s%60;return m+':'+(ss<10?'0':'')+ss;}
+  function startTimer(){
+    var mins=+document.getElementById('s-timer').value;
+    cancelTimer(false);
+    if(mins<=0){document.getElementById('s-timer-val').textContent='';return;}
+    if(!playing){togglePlay();} // start the sound if not already playing
+    timerEnd=Date.now()+mins*60000;
+    document.getElementById('s-timer-btn').textContent='Cancel';
+    tickTimer();
+    timerInterval=setInterval(tickTimer,1000);
+    announce('Sleep timer set for '+mins+' minutes.');
+  }
+  function tickTimer(){
+    var remain=Math.max(0,Math.round((timerEnd-Date.now())/1000));
+    document.getElementById('s-timer-val').textContent=fmtTime(remain);
+    if(remain<=0){
+      // gentle fade out over ~4s then stop
+      if(masterGain){masterGain.gain.setTargetAtTime(0,actx.currentTime,1.3);}
+      setTimeout(function(){stopNodes();setPlayIcons(false);setVolume(state.vol);stopSpec();},4500);
+      cancelTimer(true);
+      document.getElementById('s-timer-val').textContent='done';
+      announce('Sleep timer finished. Sound stopped.');
+    }
+  }
+  function cancelTimer(silent){
+    if(timerInterval){clearInterval(timerInterval);timerInterval=null;}
+    if(timerTimeout){clearTimeout(timerTimeout);timerTimeout=null;}
+    document.getElementById('s-timer-btn').textContent='Start';
+    if(!silent)document.getElementById('s-timer-val').textContent='';
+  }
+  function armTimer(){/* legacy hook — timer now driven by explicit Start button */}
+
+  document.getElementById('s-timer-btn').onclick=function(){
+    if(timerInterval){cancelTimer(false);announce('Sleep timer cancelled.');}
+    else{startTimer();}
+  };
+
+  document.getElementById('big-play').onclick=togglePlay;
+  document.getElementById('s-vol').oninput=function(){state.vol=+this.value;document.getElementById('s-vol-val').textContent=this.value+'%';setVolume(state.vol);};
+  document.getElementById('s-mod').oninput=function(){state.mod=+this.value;document.getElementById('s-mod-val').textContent=this.value==='0'?'Off':this.value+'%';if(playing)restart();};
+  document.getElementById('s-width').oninput=function(){
+    state.width=+this.value;
+    document.getElementById('s-width-val').textContent=this.value+'%';
+    var aw=document.getElementById('a-width');if(aw){aw.value=this.value;document.getElementById('a-width-val').textContent=this.value+'%';}
+    if(playing)restart();
+  };
+  document.getElementById('s-timer').onchange=function(){if(timerInterval)startTimer();else document.getElementById('s-timer-val').textContent='';};
+
+  function drawSimpleViz(){
+    var cv=document.getElementById('s-viz'),ctx=prep(cv),w=cv._w,h=cv._h;
+    // draw a representative waveform of the current type
+    var n=w,seed=state.seed,x=makeMono(state.type,nextPow2(n),seed);
+    // scale to the actual peak of the visible samples, with headroom, so
+    // tall spikes never clip against the card edges
+    var peak=0;for(var i=0;i<w;i++){var a=Math.abs(x[i]);if(a>peak)peak=a;}
+    peak=peak||1;
+    var mid=h/2,amp=(h/2-4)/peak;   // leave a 4px margin top & bottom
+    ctx.strokeStyle=COL.accent;ctx.lineWidth=1.4;ctx.lineJoin='round';ctx.beginPath();
+    for(var i=0;i<w;i++){var y=mid-x[i]*amp;i?ctx.lineTo(i,y):ctx.moveTo(i,y);}
+    ctx.stroke();
+  }
+
+  // ============================================================
+  // ADVANCED MODE WIRING
+  // ============================================================
+  var mixDefaults=[['brown',true,1.0],['pink',true,0.5],['white',false,0.3]];
+  var mixRows=[];
+  var mrWrap=document.getElementById('mix-rows');
+  mixDefaults.forEach(function(d,i){
+    var row=document.createElement('div');row.className='mixrow';
+    var cb=document.createElement('input');cb.type='checkbox';cb.checked=d[1];
+    cb.setAttribute('aria-label','Enable mix layer '+(i+1));
+    var sel=document.createElement('select');
+    sel.setAttribute('aria-label','Layer '+(i+1)+' noise type');
+    ['white','pink','brown','blue','violet'].forEach(function(t){
+      var o=document.createElement('option');o.value=t;o.textContent=t;if(t===d[0])o.selected=true;sel.appendChild(o);
+    });
+    var rng=document.createElement('input');rng.type='range';rng.min='0';rng.max='1.5';rng.step='0.05';rng.value=String(d[2]);
+    rng.setAttribute('aria-label','Layer '+(i+1)+' level');
+    var val=el('span','val',d[2].toFixed(2));
+    row.appendChild(cb);row.appendChild(sel);row.appendChild(rng);row.appendChild(val);
+    rng.oninput=function(){val.textContent=(+rng.value).toFixed(2);updateAdvNow();if(state.mixOn)refreshAnalysis();if(playing&&state.mixOn)restart();};
+    cb.onchange=function(){updateAdvNow();if(state.mixOn)refreshAnalysis();if(playing&&state.mixOn)restart();};
+    sel.onchange=function(){updateAdvNow();if(state.mixOn)refreshAnalysis();if(playing&&state.mixOn)restart();};
+    mixRows.push({cb:cb,sel:sel,rng:rng});
+    mrWrap.appendChild(row);
+  });
+  function activeLayers(){return mixRows.filter(function(r){return r.cb.checked&&+r.rng.value>0;}).map(function(r){return {type:r.sel.value,level:+r.rng.value};});}
+
+  document.getElementById('mix-on').onchange=function(){state.mixOn=this.checked;updateAdvNow();refreshAnalysis();if(playing)restart();};
+  document.getElementById('a-type').onchange=function(){updateAdvNow();refreshAnalysis();if(playing)restart();};
+  document.getElementById('a-mod').oninput=function(){document.getElementById('a-mod-val').textContent=this.value==='0'?'Off':this.value+'%';if(playing)restart();};
+  document.getElementById('a-width').oninput=function(){
+    state.width=+this.value;
+    var w=this.value/100, a=Math.cos(w*Math.PI/2), r=a*a; // inter-channel correlation
+    document.getElementById('a-width-val').textContent=this.value+'%';
+    var sw=document.getElementById('s-width');if(sw){sw.value=this.value;document.getElementById('s-width-val').textContent=this.value+'%';}
+    var sl=document.getElementById('a-slope');
+    if(sl)sl.dataset.corr='r='+r.toFixed(2);
+    updateSlopeLine();
+    if(playing)restart();
+  };
+  document.getElementById('a-vol').oninput=function(){document.getElementById('a-vol-val').textContent=this.value+'%';setVolume(+this.value);};
+  document.getElementById('a-play').onclick=togglePlay;
+
+  // Recompute the analysis signal and redraw whichever tab is showing,
+  // and update the "now / slope" line. Called whenever the signal changes.
+  function refreshAnalysis(){
+    if(state.simple)return;
+    computeAnalysis();
+    var on=document.querySelector('.tabs button.on');
+    if(on)drawAnalysis(on.dataset.tab);
+    updateSlopeLine();
+  }
+  function updateSlopeLine(){
+    var x=state.analysisData;if(!x)return;
+    var r=welch(x,44100,8192),sl=psdSlope(r.freqs,r.P,100,10000);
+    var w=(state.width==null?60:state.width)/100, a=Math.cos(w*Math.PI/2), corr=a*a;
+    var el2=document.getElementById('a-slope');
+    if(el2)el2.textContent=(sl!==null?('slope: '+sl.toFixed(2)+' dB/oct'):'slope: —')+
+      '   ·   stereo r = '+corr.toFixed(2);
+  }
+
+  function updateAdvNow(){
+    var t=document.getElementById('a-type').value;
+    if(state.mixOn){
+      var lays=activeLayers();
+      document.getElementById('a-now').textContent='Mix: '+lays.map(function(l){return l.type+'×'+l.level;}).join(' + ');
+    }else{
+      document.getElementById('a-now').textContent=labelFor(t).replace(/^./,function(c){return c.toUpperCase();});
+    }
+  }
+
+  function buildWavBlob(chL,chR,srcLen,sr,totalSamples,onProgress,done){
+    // Write Int16 stereo directly into one ArrayBuffer, tiling the source loop.
+    // Avoids allocating a huge Float64 array. Chunked so the UI can breathe.
+    var bytes=44+totalSamples*2*2;
+    var buf,view;
+    try{buf=new ArrayBuffer(bytes);}catch(e){done(null,'Not enough memory for that length — try a shorter clip.');return;}
+    view=new DataView(buf);
+    function ws(o,s){for(var i=0;i<s.length;i++)view.setUint8(o+i,s.charCodeAt(i));}
+    ws(0,'RIFF');view.setUint32(4,36+totalSamples*4,true);ws(8,'WAVE');ws(12,'fmt ');
+    view.setUint32(16,16,true);view.setUint16(20,1,true);view.setUint16(22,2,true);
+    view.setUint32(24,sr,true);view.setUint32(28,sr*4,true);view.setUint16(32,4,true);view.setUint16(34,16,true);
+    ws(36,'data');view.setUint32(40,totalSamples*4,true);
+    var fadeN=Math.floor(sr*0.02); // edge fade
+    var i=0, off=44, CHUNK=sr*10; // 10s per tick
+    function step(){
+      var end=Math.min(totalSamples,i+CHUNK);
+      for(;i<end;i++){
+        var k=i%srcLen, g=0.9;
+        if(i<fadeN)g*=i/fadeN;
+        else if(i>totalSamples-fadeN)g*=(totalSamples-i)/fadeN;
+        var vl=Math.max(-1,Math.min(1,chL[k]*g))*32767|0;
+        var vr=Math.max(-1,Math.min(1,chR[k]*g))*32767|0;
+        view.setInt16(off,vl,true);view.setInt16(off+2,vr,true);off+=4;
+      }
+      if(onProgress)onProgress(i/totalSamples);
+      if(i<totalSamples)setTimeout(step,0);
+      else done(new Blob([buf],{type:'audio/wav'}),null);
+    }
+    step();
+  }
+
+  // Produce the stereo pair for export, honoring the width setting.
+  function makeStereoPair(type,n,seed){
+    var width=(state.width==null?60:state.width)/100;
+    var M=state.mixOn?mixColors(activeLayers(),n,seed):makeMono(type,n,seed);
+    if(width<=0.001)return {L:M,R:M};
+    var A=state.mixOn?mixColors(activeLayers(),n,seed+7919):makeMono(type,n,seed+7919);
+    var B=state.mixOn?mixColors(activeLayers(),n,seed+104729):makeMono(type,n,seed+104729);
+    var a=Math.cos(width*Math.PI/2),b=Math.sin(width*Math.PI/2);
+    var L=new Float64Array(n),R=new Float64Array(n);
+    for(var i=0;i<n;i++){L[i]=a*M[i]+b*A[i];R[i]=a*M[i]+b*B[i];}
+    return {L:L,R:R};
+  }
+
+  document.getElementById('dl-wav').onclick=function(){
+    var btn=document.getElementById('dl-wav'),note=document.getElementById('dl-note');
+    if(btn.disabled)return;
+    var secs=+document.getElementById('dl-len').value;
+    var sr=44100;
+    var srcSecs=secs>=300?20:(secs>=60?10:4);
+    var n=nextPow2(sr*srcSecs);
+    var type=document.getElementById('a-type').value;
+    btn.disabled=true;btn.textContent='Building…';
+    note.textContent='';
+    setTimeout(function(){
+      var pair=makeStereoPair(type,n,state.seed);
+      var total=sr*secs;
+      buildWavBlob(pair.L,pair.R,n,sr,total,function(p){note.textContent=Math.round(p*100)+'%';},function(blob,err){
+        btn.disabled=false;btn.textContent='Download WAV';
+        if(err){note.textContent='';alert(err);return;}
+        var url=URL.createObjectURL(blob),a=document.createElement('a');
+        var name=(state.mixOn?'mix':type)+'_'+(secs>=60?(secs/60)+'min':secs+'s')+'.wav';
+        a.href=url;a.download=name;a.click();
+        note.textContent='saved';
+        setTimeout(function(){URL.revokeObjectURL(url);note.textContent='';},3000);
+      });
+    },30);
+  };
+
+  // ---- analysis ----
+  function computeAnalysis(){
+    var type=state.mixOn?null:document.getElementById('a-type').value;
+    var n=nextPow2(32768);
+    var x=state.mixOn?mixColors(activeLayers(),n,state.seed):genColor(type,n,state.seed);
+    state.analysisData=x;state.analysisType=type;
+    return x;
+  }
+  var anTabs=document.getElementById('an-tabs');
+  Array.from(anTabs.children).forEach(function(b){
+    b.onclick=function(){
+      Array.from(anTabs.children).forEach(function(c){c.classList.remove('on');c.setAttribute('aria-selected','false');});
+      b.classList.add('on');b.setAttribute('aria-selected','true');
+      var tab=b.dataset.tab;
+      document.querySelectorAll('.tabpane').forEach(function(p){p.classList.toggle('on',p.dataset.pane===tab);});
+      drawAnalysis(tab);
+    };
+  });
+  function drawAnalysis(tab){
+    if(!state.analysisData)computeAnalysis();
+    if(tab!=='spec')stopSpec();
+    if(tab==='psd')drawPSD();
+    else if(tab==='spec')syncSpec();
+    else if(tab==='acf')drawACF();
+    else if(tab==='hist')drawHist();
+    else if(tab==='sr')drawSR();
+    else if(tab==='dither')drawDither();
+  }
+
+  function drawPSD(){
+    var x=state.analysisData,cv=document.getElementById('c-psd'),ctx=prep(cv),w=cv._w,h=cv._h,pad=36,sr=44100;
+    var r=welch(x,sr,8192);var db=new Float64Array(r.P.length),vmin=1e9,vmax=-1e9;
+    for(var k=1;k<r.P.length;k++){db[k]=10*Math.log10(r.P[k]+1e-20);if(db[k]<vmin)vmin=db[k];if(db[k]>vmax)vmax=db[k];}
+    vmin=Math.max(vmin,vmax-90);axL(ctx,w,h,pad);
+    logCurve(ctx,r.freqs,db,w,h,pad,20,sr/2,vmin,vmax,COL.accent,1.2);
+    var sl=psdSlope(r.freqs,r.P,100,10000);
+    if(sl!==null){var sx=0,sy=0,nn=0;for(k=0;k<r.freqs.length;k++)if(r.freqs[k]>=100&&r.freqs[k]<=10000&&r.P[k]>0){sx+=Math.log2(r.freqs[k]);sy+=10*Math.log10(r.P[k]);nn++;}var mx=sx/nn,my=sy/nn,b=my-sl*mx;straight(ctx,sl,b,w,h,pad,20,sr/2,vmin,vmax,COL.red);}
+    freqTicks(ctx,w,h,pad,sr);
+    var ideal=state.mixOn?'mix':({white:'0',pink:'−3',brown:'−6',blue:'+3',violet:'+6',grey:'~flat'}[state.analysisType]);
+    document.getElementById('s-psd').textContent='Welch PSD (dB/Hz). Measured slope: '+(sl!==null?sl.toFixed(2):'n/a')+' dB/oct'+(state.mixOn?'':'  (ideal '+ideal+')')+'.\nThe red line is the least-squares fit over 100 Hz–10 kHz.';
+  }
+  function drawACF(){
+    var x=state.analysisData,cv=document.getElementById('c-acf'),ctx=prep(cv),w=cv._w,h=cv._h,pad=30,maxLag=400;
+    var sub=x.length>40000?x.subarray(0,40000):x;var rf=acfFFT(sub,maxLag),rd=acfDirect(sub,maxLag),resid=0;
+    for(var k=0;k<=maxLag;k++)resid=Math.max(resid,Math.abs(rf[k]-rd[k]));
+    axL(ctx,w,h,pad);var y0=(h-pad)-(0-(-0.3))/(1.1-(-0.3))*(h-2*pad);
+    ctx.strokeStyle=COL.muted;ctx.globalAlpha=.5;ctx.beginPath();ctx.moveTo(pad,y0);ctx.lineTo(w-6,y0);ctx.stroke();ctx.globalAlpha=1;
+    ctx.strokeStyle=COL.line;ctx.lineWidth=1.4;ctx.beginPath();
+    for(k=0;k<=maxLag;k++){var xx=pad+k/maxLag*(w-pad-6),yy=(h-pad)-(rf[k]-(-0.3))/(1.1-(-0.3))*(h-2*pad);k?ctx.lineTo(xx,yy):ctx.moveTo(xx,yy);}
+    ctx.stroke();
+    document.getElementById('s-acf').textContent='Autocorrelation Rxx(τ). Wiener–Khinchin residual |direct − IFFT(PSD)| = '+resid.toExponential(2)+' (≈0 confirms the theorem).\nRxx(1)='+rf[1].toFixed(3)+'  — white→0 (uncorrelated), brown→~1 (strongly correlated).';
+  }
+  function drawHist(){
+    var cv=document.getElementById('c-hist'),ctx=prep(cv),w=cv._w,h=cv._h,pad=28;
+    var distSel=document.getElementById('hist-dist');
+    var dist=distSel?distSel.value:'signal';
+    var x;
+    if(dist==='uniform'){
+      // uniform white: flat spectrum, but non-Gaussian amplitude (kurtosis ~ -1.2)
+      var rng=mulberry32(state.seed>>>0),nn=32768;x=new Float64Array(nn);
+      for(var i=0;i<nn;i++)x[i]=rng()*2-1;x=norm(x);
+    } else {
+      x=state.analysisData;
+    }
+    var hg=histogram(x,70),mo=moments(x),vmax=0;for(var b=0;b<hg.pdf.length;b++)if(hg.pdf[b]>vmax)vmax=hg.pdf[b];
+    var g=new Float64Array(hg.centers.length);for(b=0;b<g.length;b++){var z=(hg.centers[b]-mo.mean)/mo.std;g[b]=Math.exp(-.5*z*z)/(mo.std*Math.sqrt(2*Math.PI));if(g[b]>vmax)vmax=g[b];}
+    axL(ctx,w,h,pad);var bw=(w-pad-6)/hg.pdf.length;
+    ctx.fillStyle=COL.accent;ctx.globalAlpha=.5;for(b=0;b<hg.pdf.length;b++){var bh=hg.pdf[b]/vmax*(h-2*pad);ctx.fillRect(pad+b*bw,(h-pad)-bh,bw*.9,bh);}ctx.globalAlpha=1;
+    ctx.strokeStyle=COL.red;ctx.lineWidth=2;ctx.beginPath();for(b=0;b<g.length;b++){var xx=pad+(b+.5)*bw,yy=(h-pad)-g[b]/vmax*(h-2*pad);b?ctx.lineTo(xx,yy):ctx.moveTo(xx,yy);}ctx.stroke();
+    var kNote=(dist==='uniform')?'  Uniform → excess kurtosis ≈ −1.2 (flatter-than-Gaussian, bounded).':'  Gaussian → excess kurtosis ≈ 0.';
+    document.getElementById('s-hist').textContent='Amplitude distribution vs matched Gaussian (red).\nskewness '+mo.skew.toFixed(3)+'   excess kurtosis '+mo.kurt.toFixed(3)+'   crest '+mo.crest.toFixed(2)+'   PAPR '+mo.papr.toFixed(1)+' dB.'+kNote;
+  }
+  function drawSR(){
+    var cv=document.getElementById('c-sr'),ctx=prep(cv),w=cv._w,h=cv._h,pad=34;
+    var r=stochRes(),vmin=1e9,vmax=-1e9;for(var i=0;i<r.snr.length;i++){var v=r.snr[i];if(isFinite(v)){if(v<vmin)vmin=v;if(v>vmax)vmax=v;}}if(vmin<vmax-60)vmin=vmax-60;
+    axL(ctx,w,h,pad);var amax=r.amps[r.amps.length-1],pk=0;for(i=1;i<r.snr.length;i++)if(r.snr[i]>r.snr[pk])pk=i;
+    ctx.strokeStyle=COL.accent;ctx.lineWidth=1.6;ctx.beginPath();
+    for(i=0;i<r.amps.length;i++){var xx=pad+r.amps[i]/amax*(w-pad-6),vv=Math.max(vmin,Math.min(vmax,r.snr[i])),yy=(h-pad)-(vv-vmin)/(vmax-vmin)*(h-2*pad);i?ctx.lineTo(xx,yy):ctx.moveTo(xx,yy);}
+    ctx.stroke();var pv=Math.max(vmin,Math.min(vmax,r.snr[pk])),pxx=pad+r.amps[pk]/amax*(w-pad-6),pyy=(h-pad)-(pv-vmin)/(vmax-vmin)*(h-2*pad);
+    ctx.fillStyle=COL.red;ctx.beginPath();ctx.arc(pxx,pyy,5,0,2*Math.PI);ctx.fill();
+    document.getElementById('s-sr').textContent='Output SNR vs input noise level. SNR peaks at σ='+r.amps[pk].toFixed(2)+' → '+r.snr[pk].toFixed(1)+' dB.\nToo little noise: the weak signal never crosses the threshold. Too much: it drowns. A nonzero optimum = stochastic resonance.';
+  }
+  function drawDither(){
+    var cv=document.getElementById('c-dither'),ctx=prep(cv),w=cv._w,h=cv._h,pad=34,sr=44100,bits=+document.getElementById('q-bits').value,n=nextPow2(16384);
+    var probe=new Float64Array(n);for(var i=0;i<n;i++)probe[i]=0.5*Math.sin(2*Math.PI*400*i/sr);
+    var modes=[['none',COL.red],['uniform',COL.amber],['tpdf',COL.accent]],vmin=1e9,vmax=-1e9,curves=[],stats=[];
+    modes.forEach(function(md){
+      var rng=mulberry32(1),res=quantize(probe,bits,md[0],rng),re=new Float64Array(n),im=new Float64Array(n);
+      for(i=0;i<n;i++)re[i]=res.err[i]*(0.5-0.5*Math.cos(2*Math.PI*i/(n-1)));fft(re,im,false);
+      var half=n/2,db=new Float64Array(half+1),fr=new Float64Array(half+1);
+      for(var k=0;k<=half;k++){var pw=re[k]*re[k]+im[k]*im[k];db[k]=10*Math.log10(pw+1e-20);fr[k]=k*sr/n;if(k>2&&db[k]<vmin)vmin=db[k];if(db[k]>vmax)vmax=db[k];}
+      var mx=0,me=0;for(i=0;i<n;i++){mx+=probe[i];me+=res.err[i];}mx/=n;me/=n;var cov=0,vx=0,ve=0;for(i=0;i<n;i++){var dx=probe[i]-mx,de=res.err[i]-me;cov+=dx*de;vx+=dx*dx;ve+=de*de;}
+      curves.push({fr:fr,db:db,col:md[1],name:md[0]});stats.push(md[0]+' corr='+(cov/(Math.sqrt(vx*ve)||1)).toFixed(4));
+    });
+    vmin=Math.max(vmin,vmax-90);axL(ctx,w,h,pad);
+    curves.forEach(function(c){logCurve(ctx,c.fr,c.db,w,h,pad,20,sr/2,vmin,vmax,c.col,1);});
+    ctx.font='10px sans-serif';ctx.textAlign='left';var ly=pad+2;curves.forEach(function(c){ctx.fillStyle=c.col;ctx.fillText(c.name,w-72,ly);ly+=13;});
+    freqTicks(ctx,w,h,pad,sr);
+    document.getElementById('q-bits-val').textContent=bits;
+    document.getElementById('s-dither').textContent=bits+'-bit quantization error spectrum. Signal-error correlation → '+stats.join('   ')+'.\nUndithered error is signal-correlated (distortion); TPDF dither decorrelates it into a flat, benign floor.';
+  }
+  document.getElementById('q-bits').oninput=drawDither;
+  document.getElementById('hist-dist').onchange=drawHist;
+
+  // ---- live spectrogram ----
+  var specRAF=null, specStarted=false;
+  function specColor(v){ // v in 0..1 -> perceptually rising ramp
+    if(v<=0.02)return 'rgba(0,0,0,0)';
+    var t=Math.min(1,v);
+    // dark blue -> accent blue -> violet -> warm
+    var r,g,b;
+    if(t<0.5){var u=t/0.5;r=20+u*30;g=40+u*90;b=90+u*130;}
+    else{var u2=(t-0.5)/0.5;r=50+u2*190;g=130+u2*80;b=220-u2*60;}
+    return 'rgb('+(r|0)+','+(g|0)+','+(b|0)+')';
+  }
+  function drawSpecFrame(){
+    var cv=document.getElementById('c-spec');
+    if(!cv||!analyser||!specData){specRAF=null;return;}
+    var w=cv.clientWidth||700,h=cv.height;
+    // (re)size backing store once; we scroll pixels so avoid clearing each frame
+    if(cv.width!==w||cv._h!==h){cv.width=w;cv._h=h;var c0=cv.getContext('2d');c0.clearRect(0,0,w,h);}
+    var ctx=cv.getContext('2d');
+    // scroll existing image 1px left
+    var img=ctx.getImageData(1,0,w-1,h);
+    ctx.putImageData(img,0,0);
+    ctx.clearRect(w-1,0,1,h);
+
+    analyser.getByteFrequencyData(specData);
+    var sr=actx?actx.sampleRate:44100, nBins=specData.length, nyq=sr/2;
+    var fmin=20,lfmin=Math.log10(fmin),lfmax=Math.log10(nyq);
+    // For each output row map to a (fractional) bin and interpolate. The log axis
+    // crowds the bottom rows into very few bins, so nearest-bin sampling would
+    // render the bass end as blocky steps. Linear interpolation smooths it.
+    for(var y=0;y<h;y++){
+      var frac=1-(y/h);                       // 0 at bottom
+      var f=Math.pow(10,lfmin+frac*(lfmax-lfmin));
+      var pos=f/nyq*(nBins-1);                // fractional bin index
+      if(pos<0)pos=0;if(pos>nBins-1)pos=nBins-1;
+      var i0=Math.floor(pos),i1=Math.min(nBins-1,i0+1),ft=pos-i0;
+      var v=(specData[i0]*(1-ft)+specData[i1]*ft)/255;
+      if(v>0.02){ctx.fillStyle=specColor(v);ctx.fillRect(w-1,y,1,1);}
+    }
+    specRAF=requestAnimationFrame(drawSpecFrame);
+  }
+  function startSpec(){
+    if(specRAF)return;
+    specStarted=true;
+    specRAF=requestAnimationFrame(drawSpecFrame);
+    updateSpecStat();
+  }
+  function stopSpec(){
+    if(specRAF){cancelAnimationFrame(specRAF);specRAF=null;}
+  }
+  function updateSpecStat(){
+    var el2=document.getElementById('s-spec');if(!el2)return;
+    if(!playing){el2.textContent='Press play to see the live spectrogram. Time flows left to right; vertical axis is frequency (log scale, 20 Hz at the bottom); brightness is energy.';return;}
+    var t=state.mixOn?'mix':(state.simple?state.type:document.getElementById('a-type').value);
+    el2.textContent='Live spectrogram of the playing signal ('+t+'). Time → right; frequency on a log axis (20 Hz bottom, '+Math.round((actx?actx.sampleRate:44100)/2/1000)+' kHz top); brightness = energy.\nA flat-looking wash means a flat spectrum; a bright bottom edge means low-frequency emphasis (brown), a bright top means high (blue/violet).';
+  }
+  function specTabActive(){
+    var on=document.querySelector('.tabs button.on');
+    return on && on.dataset.tab==='spec';
+  }
+  function syncSpec(){
+    if(!state.simple && specTabActive() && playing && analyser)startSpec();
+    else stopSpec();
+    updateSpecStat();
+  }
+
+  // ---- shared canvas helpers ----
+  function prep(cv){var dpr=window.devicePixelRatio||1,w=cv.clientWidth||700,h=cv.height;cv.width=w*dpr;cv.height=h*dpr;var ctx=cv.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);cv._w=w;cv._h=h;return ctx;}
+  function axL(ctx,w,h,pad){ctx.strokeStyle=COL.grid;ctx.globalAlpha=.7;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(pad,6);ctx.lineTo(pad,h-pad);ctx.lineTo(w-6,h-pad);ctx.stroke();ctx.globalAlpha=1;}
+  function logCurve(ctx,fr,vals,w,h,pad,fmin,fmax,vmin,vmax,col,lw){ctx.strokeStyle=col;ctx.lineWidth=lw||1.5;ctx.beginPath();var st=false,lfm=Math.log10(fmin),lfx=Math.log10(fmax);for(var k=0;k<fr.length;k++){if(fr[k]<fmin||fr[k]>fmax)continue;var xx=pad+(Math.log10(fr[k])-lfm)/(lfx-lfm)*(w-pad-6),yy=(h-pad)-(vals[k]-vmin)/(vmax-vmin)*(h-2*pad);if(!st){ctx.moveTo(xx,yy);st=true;}else ctx.lineTo(xx,yy);}ctx.stroke();}
+  function straight(ctx,sl,b,w,h,pad,fmin,fmax,vmin,vmax,col){var lfm=Math.log10(fmin),lfx=Math.log10(fmax);ctx.strokeStyle=col;ctx.lineWidth=2;ctx.beginPath();var f1=100,f2=10000,y1=sl*Math.log2(f1)+b,y2=sl*Math.log2(f2)+b;var x1=pad+(Math.log10(f1)-lfm)/(lfx-lfm)*(w-pad-6),x2=pad+(Math.log10(f2)-lfm)/(lfx-lfm)*(w-pad-6);ctx.moveTo(x1,(h-pad)-(y1-vmin)/(vmax-vmin)*(h-2*pad));ctx.lineTo(x2,(h-pad)-(y2-vmin)/(vmax-vmin)*(h-2*pad));ctx.stroke();}
+  function freqTicks(ctx,w,h,pad,sr){ctx.fillStyle=COL.muted;ctx.font='10px sans-serif';ctx.textAlign='center';[100,1000,10000].forEach(function(f){var lfm=Math.log10(20),lfx=Math.log10(sr/2),xx=pad+(Math.log10(f)-lfm)/(lfx-lfm)*(w-pad-6);ctx.fillText(f>=1000?(f/1000)+'k':f,xx,h-pad+13);});}
+  function nextPow2(n){var p=1;while(p<n)p*=2;return p;}
+
+  // ============================================================
+  // MODE SWITCH
+  // ============================================================
+  var modeSeg=document.getElementById('mode-seg');
+  Array.from(modeSeg.children).forEach(function(b){
+    b.onclick=function(){
+      Array.from(modeSeg.children).forEach(function(c){c.classList.remove('on');c.setAttribute('aria-selected','false');});
+      b.classList.add('on');b.setAttribute('aria-selected','true');
+      state.simple=(b.dataset.mode==='simple');
+      document.getElementById('simple-view').classList.toggle('hidden',!state.simple);
+      document.getElementById('advanced-view').classList.toggle('hidden',state.simple);
+      announce(state.simple?'Simple mode':'Advanced mode');
+      if(!state.simple){updateAdvNow();computeAnalysis();drawAnalysis('psd');updateSlopeLine();}
+      else{stopSpec();}
+      if(playing)restart();
+    };
+  });
+
+  // ============================================================
+  // HELP
+  // ============================================================
+  var HELP=[
+    ['What is this?','Noise Studio plays steady background sound that many people find helpful for sleep, focus, relaxation, or masking distracting noise. It also lets curious users see the science behind each sound. Everything runs on your device — nothing is uploaded, and it works offline once loaded.'],
+    ['Simple mode','Pick a sound card (Rain, Ocean, Fan, and so on), press the big play button, and adjust volume. "Gentle waves" makes the sound slowly rise and fall so it feels less flat. "Sleep timer" fades it off after a set time.'],
+    ['Which sound should I pick?','There is no universally "best" noise — it is personal. Many people find pink (Rain) balanced for focus, brown (Ocean/Waterfall) soothing and deep for sleep, and white (Fan) effective for masking sudden sounds. Try a few at a comfortable, low volume and keep whatever feels good.'],
+    ['Spaciousness','This sends slightly different sound to each ear. Turned down, the sound feels centred and close, like a single fan in the room. Turned up, it feels wide and enveloping, as though you are inside it. The effect needs two ears to work — use headphones or stereo speakers. It does not change the volume or the tone, only how surrounded you feel.'],
+    ['Looking after your hearing','Louder is not better. Comfortable, low levels are gentler on your ears and tend to work just as well. If you use this overnight or for long stretches, keep it soft, and give your ears quiet breaks. If you notice ringing, fullness, or discomfort, stop and rest.'],
+    ['Accessibility','Open the ☼ menu (top right) for larger text, reduced motion, and a stronger keyboard-focus outline. The whole app works with a keyboard: Tab to move, Enter or Space to activate, and Escape to close pop-ups. Pressing Space or Enter on empty space toggles play. It also follows your system dark-mode and reduced-motion settings automatically, and works with screen readers.'],
+    ['Advanced mode','Gives you the full generator: choose any color directly, blend several in Mix mode, add wave modulation, and download a WAV to use elsewhere. Below it, the analysis panels show the actual signal science.'],
+    ['The analysis panels','PSD shows the frequency spectrum and its measured slope. Spectrogram shows the live sound scrolling in real time — frequency vertically, time horizontally, brightness as energy. Autocorrelation demonstrates the Wiener–Khinchin theorem (its residual is ~0). Distribution shows the amplitude histogram and its statistical moments. Stochastic resonance demonstrates noise aiding weak-signal detection. Dither shows how adding noise before quantization removes distortion.'],
+    ['Is this a medical treatment?','No. This is a comfort and productivity tool, not a medical device, and it makes no health claims — it does not diagnose, treat, or cure anything. If you have ongoing trouble with sleep, focus, anxiety, or tinnitus (ringing in the ears), please talk to a qualified healthcare professional. This tool is not a substitute for care, and if you are ever in distress it is always okay to reach out to local crisis or emergency services.'],
+    ['Your privacy & safety','This app runs entirely on your device. It has no account, sends nothing over the internet, and stores only your accessibility preferences locally. It cannot see or transmit anything about you. It also carries a strict security policy that blocks it from loading outside code or making any network connection.'],
+    ['Making sure your copy is genuine','Because this file is free to copy, a bad actor could alter a copy and re-share it. Official releases include a short "SHA-256" fingerprint you can check: on Windows run "Get-FileHash index.html -Algorithm SHA256", on Mac "shasum -a 256 index.html", on Linux "sha256sum index.html", and compare it to the official value. If it matches, your copy is authentic; if not, get a fresh one from the official source. Prefer copies served over a secure https:// address.'],
+    ['Sharing','You are welcome to share this freely. It is a single file — you can email it, put it on a USB stick, or host it on any free static host (GitHub Pages, Cloudflare Pages, Netlify). No license fees, no accounts. If you host it, please use https and publish the fingerprint so others can verify their copy.']
+  ];
+  var helpBody=document.getElementById('help-body');
+  HELP.forEach(function(s){var h=document.createElement('h3');h.textContent=s[0];var p=document.createElement('p');p.textContent=s[1];helpBody.appendChild(h);helpBody.appendChild(p);});
+  document.getElementById('help-btn').onclick=function(){openModal('help-overlay');};
+  document.getElementById('help-close').onclick=function(){closeModal('help-overlay');};
+  document.getElementById('help-overlay').onclick=function(e){if(e.target===this)closeModal('help-overlay');};
+
+  // ============================================================
+  // ACCESSIBILITY SETTINGS
+  // ============================================================
+  var A11Y_KEYS={large:'ns_a11y_large',still:'ns_a11y_still',contrast:'ns_a11y_contrast'};
+  function loadPref(k){try{return localStorage.getItem(k)==='1';}catch(e){return false;}}
+  function savePref(k,v){try{localStorage.setItem(k,v?'1':'0');}catch(e){}}
+  function applyA11y(){
+    var large=document.getElementById('opt-large').checked;
+    var still=document.getElementById('opt-still').checked;
+    var contrast=document.getElementById('opt-contrast').checked;
+    document.documentElement.classList.toggle('a11y-large',large);
+    document.documentElement.classList.toggle('a11y-still',still);
+    document.documentElement.style.setProperty('--focus-w',contrast?'4px':'3px');
+    savePref(A11Y_KEYS.large,large);savePref(A11Y_KEYS.still,still);savePref(A11Y_KEYS.contrast,contrast);
+    // redraw canvases since sizing may change
+    drawSimpleViz();if(!state.simple){var on=document.querySelector('.tabs button.on');if(on)drawAnalysis(on.dataset.tab);}
+  }
+  // restore saved prefs
+  document.getElementById('opt-large').checked=loadPref(A11Y_KEYS.large);
+  document.getElementById('opt-still').checked=loadPref(A11Y_KEYS.still);
+  document.getElementById('opt-contrast').checked=loadPref(A11Y_KEYS.contrast);
+  document.documentElement.classList.toggle('a11y-large',document.getElementById('opt-large').checked);
+  document.documentElement.classList.toggle('a11y-still',document.getElementById('opt-still').checked);
+  ['opt-large','opt-still','opt-contrast'].forEach(function(id){document.getElementById(id).onchange=applyA11y;});
+  document.getElementById('a11y-btn').onclick=function(){openModal('a11y-overlay');};
+  document.getElementById('a11y-close').onclick=function(){closeModal('a11y-overlay');};
+  document.getElementById('a11y-overlay').onclick=function(e){if(e.target===this)closeModal('a11y-overlay');};
+  document.getElementById('opt-tour').onclick=function(){closeModal('a11y-overlay');if(state.simple){showTour(0);}else{document.getElementById('tab-simple').click();setTimeout(function(){showTour(0);},200);}};
+
+  // ---- modal focus management + Escape ----
+  var lastFocused=null;
+  function openModal(id){
+    lastFocused=document.activeElement;
+    var ov=document.getElementById(id);ov.classList.add('on');
+    var focusable=ov.querySelector('button,input,select,a,[tabindex]');
+    if(focusable)focusable.focus();
+  }
+  function closeModal(id){
+    document.getElementById(id).classList.remove('on');
+    if(lastFocused&&lastFocused.focus)lastFocused.focus();
+  }
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Escape'){
+      document.querySelectorAll('.overlay.on').forEach(function(o){o.classList.remove('on');});
+      if(!document.getElementById('tourbox').classList.contains('hidden'))endTour();
+      if(lastFocused&&lastFocused.focus)lastFocused.focus();
+    }
+    // space/enter toggles play from anywhere not in a control
+    if((e.key===' '||e.key==='Enter')&&e.target===document.body){e.preventDefault();togglePlay();}
+  });
+
+  // ============================================================
+  // GUIDED TOUR
+  // ============================================================
+  var TOUR=[
+    ['tour-presets','Choose a sound','Tap any card to pick a type of calming noise. Each is tuned for a different feel — rain, ocean, a fan, and more.'],
+    ['tour-player','Play & adjust','Press play to start. Set the volume low and comfortable, add gentle waves, or set a sleep timer to fade off automatically.'],
+    ['mode-seg','Simple or Advanced','Switch to Advanced any time to build custom sounds, blend colors, download audio, and explore the signal science.']
+  ];
+  var tstep=0,tbox=document.getElementById('tourbox'),tdim=document.getElementById('tour-dim'),curEl=null;
+  function showTour(i){
+    if(i<0||i>=TOUR.length){endTour();return;}
+    tstep=i;var t=TOUR[i],target=document.getElementById(t[0])||document.getElementById('mode-seg');
+    if(t[0]==='mode-seg')target=document.getElementById('mode-seg');
+    if(curEl)curEl.classList.remove('highlight');
+    curEl=target;if(target)target.classList.add('highlight');
+    tdim.classList.add('on');
+    tbox.classList.remove('hidden');
+    // build with safe DOM (no innerHTML)
+    while(tbox.firstChild)tbox.removeChild(tbox.firstChild);
+    tbox.appendChild(el('h4',null,t[1]));
+    tbox.appendChild(el('p',null,t[2]));
+    var nav=el('div','tnav');
+    nav.appendChild(el('span','tdot',(i+1)+' / '+TOUR.length));
+    var grp=document.createElement('span');
+    var skip=el('button','btn','Skip');skip.style.padding='6px 10px';
+    var next=el('button','btn primary',i===TOUR.length-1?'Done':'Next');next.style.padding='6px 12px';
+    grp.appendChild(skip);grp.appendChild(document.createTextNode(' '));grp.appendChild(next);
+    nav.appendChild(grp);tbox.appendChild(nav);
+    var r=target?target.getBoundingClientRect():{bottom:80,left:20,width:200};
+    var top=Math.min(window.innerHeight-160,r.bottom+10),left=Math.min(window.innerWidth-320,Math.max(10,r.left));
+    tbox.style.top=top+'px';tbox.style.left=left+'px';
+    next.onclick=function(){showTour(tstep+1);};
+    skip.onclick=endTour;
+    next.focus();
+  }
+  function endTour(){if(curEl)curEl.classList.remove('highlight');tbox.classList.add('hidden');tdim.classList.remove('on');try{localStorage.setItem('ns_toured','1');}catch(e){}}
+  function maybeTour(){var seen=false;try{seen=localStorage.getItem('ns_toured')==='1';}catch(e){}if(!seen)setTimeout(function(){showTour(0);},600);}
+
+  // ============================================================
+  // INIT
+  // ============================================================
+  // Pause the spectrogram animation when the page isn't visible (saves battery,
+  // matters for overnight use on a phone). Audio keeps playing.
+  document.addEventListener('visibilitychange',function(){
+    if(document.hidden)stopSpec();
+    else syncSpec();
+  });
+
+  selectPreset('rain');
+  drawSimpleViz();
+  updateAdvNow();
+  window.addEventListener('resize',function(){drawSimpleViz();if(!state.simple){var on=document.querySelector('.tabs button.on');if(on)drawAnalysis(on.dataset.tab);}});
+  maybeTour();
+})();
+</script>
+</body>
+</html>
