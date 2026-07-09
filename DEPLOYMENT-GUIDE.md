@@ -314,20 +314,3 @@ exactly `SITE_URL` (all caps).
 **The Actions check fails with "MISMATCH".**
 You edited `index.html` without running `release.sh`. Run it, re-upload the changed
 files, and the check will pass on the next run. This is the system working as intended.
-
----
-
-# A closing note
-
-You've built something genuinely useful and given it away, with the care to make it
-private, accessible, verifiable, and free to run. That's rarer than it should be.
-
-Two things worth remembering as it goes out into the world:
-
-- **Resist adding a backend.** Analytics, accounts, "save your favourites to the
-  cloud" — each one creates real attack surface and a real cost, and none of them
-  make the tool better for the person who just needs to sleep. The absence of a
-  server is the feature.
-- **Keep the honest framing.** The tool doesn't promise to fix anyone. It offers
-  something that many people find helps, at no cost, with no strings, and it points
-  toward real help when that's what's needed. That honesty is why people will trust it.
